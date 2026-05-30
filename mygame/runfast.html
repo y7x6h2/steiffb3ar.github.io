@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生死扑克 - Life and Death Poker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #2c3e50;
+            background: radial-gradient(circle, #35654d 0%, #1e3c2f 100%);
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Card Styles */
+        .card {
+            width: 80px;
+            height: 112px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 5px;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 0.2s, top 0.2s, left 0.2s;
+            border: 1px solid #ccc;
+            backface-visibility: hidden;
+        }
+
+        .card.red { color: #e74c3c; }
+        .card.black { color: #2c3e50; }
+        .card.selected { transform: translateY(-20px); border-color: #f1c40f; box-shadow: 0 0 10px #f1c40f; }
+        .card-center { font-size: 32px; align-self: center; }
+        .card-corner-br { transform: rotate(180deg); align-self: flex-end; }
+        
+        .card-back {
+            background: repeating-linear-gradient(
+                45deg,
+                #b71c1c,
+                #b71c1c 10px,
+                #c62828 10px,
+                #c62828 20px
+            );
+            border: 2px solid white;
+        }
+
+        /* Layout Zones */
+        .avatar-zone {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            transition: all 0.3s;
+        }
+        .avatar {
+            font-size: 64px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 5px;
+            border: 3px solid transparent;
+            position: relative;
+            z-index: 10;
+        }
+        .avatar.active { border-color: #f1c40f; box-shadow: 0 0 15px #f1c40f; }
+        .bubble {
+            background: white;
+            color: black;
+            padding: 5px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            position: absolute;
+            opacity: 0;
+            transition: opacity 0.5s;
+            white-space: nowrap;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        /* Animations */
+        @keyframes dealAnim {
+            from { top: 50%; left: 50%; transform: scale(0.1); opacity: 0; }
+        }
+        @keyframes bombShake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        @keyframes textPop {
+            0% { transform: scale(0); opacity: 0; }
+            15% { transform: scale(1.5); opacity: 1; }
+            85% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.5); opacity: 0; }
+        }
+        @keyframes passFloat {
+            0% { transform: scale(0.5); opacity: 0; }
+            30% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+        @keyframes rain {
+            0% { transform: translateY(-50px); opacity: 1; }
+            100% { transform: translateY(110vh); opacity: 0; }
+        }
+        @keyframes rollJump {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0); }
+        }
+
+        .bomb-effect {
+            animation: bombShake 0.5s;
+            box-shadow: inset 0 0 50px rgba(255, 0, 0, 0.5);
+        }
+
+        .floating-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3rem;
+            font-weight: bold;
+            color: #f1c40f;
+            text-shadow: 2px 2px 0 #c0392b, -1px -1px 0 #c0392b, 1px -1px 0 #c0392b, -1px 1px 0 #c0392b, 1px 1px 0 #c0392b;
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0;
+            white-space: nowrap;
+            text-align: center;
+        }
+        
+        .pass-text {
+            position: absolute;
+            font-size: 3rem;
+            font-weight: bold;
+            color: #9ca3af; /* Gray-400 */
+            text-shadow: 2px 2px 0 #000;
+            pointer-events: none;
+            z-index: 50;
+            animation: passFloat 1s forwards;
+            white-space: nowrap;
+        }
+
+        /* Updated Log Container Position */
+        .log-container {
+            background: rgba(0,0,0,0.6);
+            border-radius: 8px;
+            padding: 8px;
+            max-height: 80px;
+            overflow-y: auto;
+            color: #ecf0f1;
+            font-size: 13px;
+            scrollbar-width: thin;
+            text-align: center;
+            backdrop-filter: blur(2px);
+            pointer-events: none; /* Allow clicking through to game */
+        }
+
+        /* Cheat Sheet Table */
+        .cheat-sheet {
+            display: none;
+            background: rgba(255, 255, 255, 0.95);
+            color: black;
+            padding: 10px;
+            border-radius: 8px;
+            position: absolute;
+            top: 40px;
+            right: 0;
+            z-index: 50;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .cheat-btn:hover + .cheat-sheet {
+            display: block;
+        }
+        table.counter-table td, table.counter-table th {
+            border: 1px solid #ddd;
+            padding: 4px 8px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        /* Emoji Menu */
+        .emoji-menu {
+            transition: transform 0.3s;
+            transform: translateY(100%);
+        }
+        .emoji-menu.open {
+            transform: translateY(0);
+        }
+
+        /* Roll Overlay */
+        .roll-overlay {
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+        }
+        .dice-box {
+            font-size: 3rem;
+            width: 80px;
+            height: 80px;
+            background: white;
+            color: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(255,215,0,0.3);
+            font-weight: bold;
+        }
+        .dice-anim {
+            animation: rollJump 0.2s infinite;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen relative">
+
+    <!-- Modal: Start Screen -->
+    <div id="startModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
+        <div class="bg-gray-800 text-white p-8 rounded-lg shadow-2xl max-w-md w-full text-center border border-gray-600">
+            <h1 class="text-4xl font-bold mb-2 text-yellow-500">☠️ 生死扑克</h1>
+            <p class="text-gray-400 mb-6 text-sm">Life and Death Poker</p>
+            <input type="text" id="playerNameInput" placeholder="请输入你的名字 (默认: 小丑)" class="w-full p-3 mb-4 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-yellow-500 text-center">
+            <button onclick="startGame()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 px-4 rounded transition">开始游戏</button>
+        </div>
+    </div>
+
+    <!-- Modal: Roll Dice Overlay -->
+    <div id="rollOverlay" class="fixed inset-0 roll-overlay z-40 hidden flex flex-col items-center justify-center">
+        <h2 class="text-3xl text-yellow-400 font-bold mb-8">🎲 掷骰子决定先手 🎲</h2>
+        <div class="flex gap-12 text-center">
+            <div class="flex flex-col items-center">
+                <div class="text-xl text-white mb-2" id="rollName0">玩家</div>
+                <div id="dice0" class="dice-box">?</div>
+            </div>
+            <div class="flex flex-col items-center">
+                <div class="text-xl text-white mb-2">咕咕</div>
+                <div id="dice1" class="dice-box">?</div>
+            </div>
+            <div class="flex flex-col items-center">
+                <div class="text-xl text-white mb-2">嘎嘎</div>
+                <div id="dice2" class="dice-box">?</div>
+            </div>
+        </div>
+        <div id="rollResult" class="text-2xl text-white font-bold mt-8 h-8"></div>
+    </div>
+
+    <!-- Modal: Rules -->
+    <div id="rulesModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center hidden">
+        <div class="bg-white text-gray-800 p-6 rounded-lg shadow-2xl max-w-lg w-full relative">
+            <button onclick="toggleRules(false)" class="absolute top-2 right-2 text-2xl">&times;</button>
+            <h2 class="text-2xl font-bold mb-4 text-center">📜 游戏规则</h2>
+            <div class="text-sm space-y-2 overflow-y-auto max-h-[60vh] pr-2">
+                <p>1. <strong>牌序</strong>：3 < ... < A < 2 < 王。2是强力牌。</p>
+                <p>2. <strong>出牌限制</strong>：必须比上家大<b>一级</b>（如456接567）。花色不限。</p>
+                <p>3. <strong>2的规则</strong>：2是战略截断牌！如果有人出N张牌，你可以出N张2来直接截断，获得出牌权（洗牌）。</p>
+                <p>4. <strong>双王</strong>：万能牌，不可单出，必须组合。</p>
+                <p>5. <strong>炸弹</strong>：3张及以上同点数。炸弹可打断一切（除更大炸弹）。</p>
+                <p>6. <strong>获胜机制</strong>：先出完牌者胜。若打出的牌无人能接，出牌者需<b>罚抽一张</b>，然后继续出牌。</p>
+                <p>7. <strong>开局</strong>：每人5张，Roll点高者先手（先手需补牌至6张）。</p>
+            </div>
+            <button onclick="toggleRules(false)" class="mt-4 w-full bg-blue-600 text-white py-2 rounded">我明白了</button>
+        </div>
+    </div>
+
+    <!-- UI: Top Bar -->
+    <div class="absolute top-4 left-4 flex gap-2 z-40">
+        <button onclick="toggleRules(true)" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm">规则</button>
+        <button onclick="restartGame()" class="bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">重开</button>
+    </div>
+
+    <!-- UI: Cheat Sheet -->
+    <div class="absolute top-4 right-4 z-40 flex flex-col items-end">
+        <button class="cheat-btn bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm mb-1">🧮 记牌器</button>
+        <div class="cheat-sheet">
+            <h3 class="font-bold mb-2 text-center border-b pb-1">已打出的牌的数量 (算牌用)</h3>
+            <table class="counter-table">
+                <thead>
+                    <tr>
+                        <th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>J</th><th>Q</th><th>K</th><th>A</th><th>2</th><th>🤡</th>
+                    </tr>
+                </thead>
+                <tbody id="counterBody">
+                    <!-- JS fills this -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Game Board -->
+    <div id="gameBoard" class="w-full h-full relative overflow-hidden">
+        
+        <!-- Top: Dealer -->
+        <div class="avatar-zone top-4 left-1/2 -translate-x-1/2 z-30">
+            <div class="avatar text-6xl bg-gray-900 border-2 border-yellow-600">🐝</div>
+            <div class="bg-black/50 px-2 rounded mt-1">熊熊荷官</div>
+        </div>
+
+        <!-- UI: Log (Moved Lower) -->
+        <div class="absolute top-36 left-1/2 -translate-x-1/2 w-96 z-20 flex justify-center">
+            <div id="gameLog" class="log-container w-full"></div>
+        </div>
+
+        <!-- Left: PC1 (Gugu) -->
+        <div class="avatar-zone top-1/2 left-8 -translate-y-1/2">
+            <div id="avatar-1" class="avatar relative">🦉
+                <div id="bubble-1" class="bubble" style="top: -20px; left: 60px;"></div>
+            </div>
+            <div class="bg-black/50 px-2 rounded mt-1">咕咕 <span id="count-1" class="text-yellow-400 font-bold">(5)</span></div>
+            <div id="hand-1" class="mt-4 relative w-20 h-24"></div> <!-- Stacked cards -->
+        </div>
+
+        <!-- Right: PC2 (Gaga) -->
+        <div class="avatar-zone top-1/2 right-8 -translate-y-1/2">
+            <div id="avatar-2" class="avatar relative">🐧
+                <div id="bubble-2" class="bubble" style="top: -20px; right: 60px;"></div>
+            </div>
+            <div class="bg-black/50 px-2 rounded mt-1">嘎嘎 <span id="count-2" class="text-yellow-400 font-bold">(5)</span></div>
+            <div id="hand-2" class="mt-4 relative w-20 h-24"></div> <!-- Stacked cards -->
+        </div>
+
+        <!-- Center: Play Area -->
+        <div id="playArea" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-48 border-2 border-white/10 rounded-lg flex items-center justify-center">
+            <!-- Played cards go here -->
+        </div>
+
+        <!-- Bottom: Player -->
+        <div class="avatar-zone bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl flex flex-col items-center">
+            
+            <!-- Controls -->
+            <div id="playerControls" class="flex gap-4 mb-2 hidden z-30">
+                <button onclick="playerPass()" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded shadow-lg">跳过</button>
+                <button onclick="playerPlay()" class="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 px-6 rounded shadow-lg ring-2 ring-yellow-400">出牌</button>
+            </div>
+
+            <!-- Hand -->
+            <div id="hand-0" class="h-32 w-full relative flex justify-center">
+                <!-- Cards injected here -->
+            </div>
+            
+            <div class="flex items-center gap-2 mt-2">
+                <div id="avatar-0" class="avatar w-12 h-12 text-2xl">🤡</div>
+                <div class="bg-black/50 px-2 rounded"><span id="playerNameDisplay">玩家</span> <span id="count-0" class="text-yellow-400 font-bold">(5)</span></div>
+            </div>
+        </div>
+
+        <!-- Emoji FAB -->
+        <div class="absolute bottom-8 right-8 z-50">
+            <button onclick="toggleEmojiMenu()" class="bg-pink-500 hover:bg-pink-400 text-white w-12 h-12 rounded-full shadow-lg text-2xl flex items-center justify-center transition">💬</button>
+            <div id="emojiMenu" class="absolute bottom-16 right-0 bg-white p-2 rounded-lg shadow-xl grid grid-cols-4 gap-2 w-48 emoji-menu hidden">
+                <button onclick="sendEmoji('😊')" class="text-2xl hover:bg-gray-200 p-1 rounded">😊</button>
+                <button onclick="sendEmoji('😔')" class="text-2xl hover:bg-gray-200 p-1 rounded">😔</button>
+                <button onclick="sendEmoji('🤬')" class="text-2xl hover:bg-gray-200 p-1 rounded">🤬</button>
+                <button onclick="sendEmoji('😭')" class="text-2xl hover:bg-gray-200 p-1 rounded">😭</button>
+                <button onclick="sendEmoji('🦇')" class="text-2xl hover:bg-gray-200 p-1 rounded">🦇</button>
+                <button onclick="sendEmoji('🐱')" class="text-2xl hover:bg-gray-200 p-1 rounded">🐱</button>
+                <button onclick="sendEmoji('🐕')" class="text-2xl hover:bg-gray-200 p-1 rounded">🐕</button>
+                <button onclick="sendEmoji('🎂')" class="text-2xl hover:bg-gray-200 p-1 rounded">🎂</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Effects Layer -->
+    <div id="effectLayer" class="absolute inset-0 pointer-events-none overflow-hidden z-[60]">
+        <div id="floatingText" class="floating-text"></div>
+        <div id="rainContainer" class="absolute inset-0"></div>
+        <!-- Dynamic flying cards container -->
+        <div id="flyContainer" class="absolute inset-0"></div>
+    </div>
+
+    <script>
+        // --- Game Config & Constants ---
+        const RANKS = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'];
+        const VALUES = {
+            '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 
+            'J':11, 'Q':12, 'K':13, 'A':14, '2':15, 'S_JOKER':16, 'B_JOKER':17
+        };
+        const SUITS = ['♠', '♥', '♣', '♦'];
+        // Player 0: Human, 1: Gugu (Left), 2: Gaga (Right)
+        // Order: Gugu(1) -> You(0) -> Gaga(2) -> Gugu(1) ...
+        const PLAYERS = [
+            { id: 0, name: "You", type: "human", avatar: "🤡", hand: [] },
+            { id: 1, name: "咕咕", type: "ai", avatar: "🦉", hand: [] },
+            { id: 2, name: "嘎嘎", type: "ai", avatar: "🐧", hand: [] }
+        ];
+        
+        // --- State ---
+        let deck = [];
+        let playedHistory = {}; // For counter: rank -> count
+        let currentPlayerIndex = -1;
+        let lastPlay = null; // { type, rank, length, playerId, cards }
+        let passCount = 0;
+        let playerName = "小丑";
+
+        // --- Core: Card Class ---
+        class Card {
+            constructor(rank, suit, isJoker = false, isBig = false) {
+                this.rank = rank;
+                this.suit = suit;
+                this.isJoker = isJoker;
+                this.value = isJoker ? (isBig ? VALUES.B_JOKER : VALUES.S_JOKER) : VALUES[rank];
+                this.id = Math.random().toString(36).substr(2, 9);
+                this.selected = false;
+            }
+
+            getDisplay() {
+                if (this.isJoker) return this.value === 17 ? "大王" : "小王";
+                return this.rank;
+            }
+
+            getColor() {
+                if (this.isJoker) return this.value === 17 ? "red" : "black";
+                return (this.suit === '♥' || this.suit === '♦') ? "red" : "black";
+            }
+        }
+
+        // --- Initialization ---
+        function initDeck() {
+            deck = [];
+            playedHistory = {};
+            RANKS.forEach(r => playedHistory[r] = 0);
+            playedHistory['🤡'] = 0;
+
+            for (let r of RANKS) {
+                for (let s of SUITS) {
+                    deck.push(new Card(r, s));
+                }
+            }
+            deck.push(new Card('Joker', '', true, false));
+            deck.push(new Card('Joker', '', true, true));
+            shuffle(deck);
+        }
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function updateCounter(cards) {
+            cards.forEach(c => {
+                if (c.isJoker) playedHistory['🤡']++;
+                else playedHistory[c.rank]++;
+            });
+            renderCounter();
+        }
+
+        // --- Game Flow Control ---
+        function startGame() {
+            const inputName = document.getElementById('playerNameInput').value.trim();
+            playerName = inputName || "小丑";
+            PLAYERS[0].name = playerName;
+            document.getElementById('playerNameDisplay').innerText = playerName;
+            document.getElementById('rollName0').innerText = playerName;
+            
+            document.getElementById('startModal').classList.add('hidden');
+            document.getElementById('rulesModal').classList.remove('hidden'); // Show rules first time
+            
+            initGameRound();
+        }
+
+        function restartGame() {
+            if(confirm("确定要重新开始吗？")) {
+                initGameRound();
+            }
+        }
+
+        function initGameRound() {
+            // Reset State
+            initDeck();
+            PLAYERS.forEach(p => p.hand = []);
+            lastPlay = null;
+            passCount = 0;
+            document.getElementById('playArea').innerHTML = '';
+            document.getElementById('gameLog').innerHTML = '';
+            renderCounter();
+
+            // Deal 5 cards each
+            log("熊熊荷官开始发牌...");
+            dealCards(5).then(() => {
+                // Trigger visual roll
+                showRollAnimation();
+            });
+        }
+
+        function dealCards(count) {
+            return new Promise(resolve => {
+                let dealt = 0;
+                let total = count * 3;
+                let interval = setInterval(() => {
+                    const pIndex = dealt % 3;
+                    const card = deck.pop();
+                    PLAYERS[pIndex].hand.push(card);
+                    sortHand(PLAYERS[pIndex].hand);
+                    renderHand(pIndex);
+                    
+                    dealt++;
+                    if (dealt >= total) {
+                        clearInterval(interval);
+                        resolve();
+                    }
+                }, 80);
+            });
+        }
+
+        // --- Visual Effects ---
+
+        function animateFlyCard(targetPlayerIndex) {
+            return new Promise(resolve => {
+                const flyContainer = document.getElementById('flyContainer');
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card card-back';
+                
+                // Start position: Center screen (Dealer area approx)
+                const startX = window.innerWidth / 2 - 40;
+                const startY = window.innerHeight / 2 - 56;
+                
+                cardEl.style.left = `${startX}px`;
+                cardEl.style.top = `${startY}px`;
+                cardEl.style.zIndex = 100;
+                flyContainer.appendChild(cardEl);
+
+                // Target position
+                const targetAvatar = document.getElementById(`avatar-${targetPlayerIndex}`);
+                const rect = targetAvatar.getBoundingClientRect();
+                const targetX = rect.left + rect.width/2 - 40;
+                const targetY = rect.top + rect.height/2 - 56;
+
+                // Force reflow
+                cardEl.offsetHeight; 
+
+                // Animate
+                cardEl.style.transition = 'all 0.6s ease-in-out';
+                cardEl.style.left = `${targetX}px`;
+                cardEl.style.top = `${targetY}px`;
+                cardEl.style.transform = 'scale(0.5)'; // Shrink a bit as it lands
+
+                setTimeout(() => {
+                    cardEl.remove();
+                    resolve();
+                }, 600);
+            });
+        }
+
+        function animatePlayCards(playerId, cards) {
+            return new Promise(resolve => {
+                const startRect = document.getElementById(`avatar-${playerId}`).getBoundingClientRect();
+                const endContainer = document.getElementById('playArea');
+                const endRect = endContainer.getBoundingClientRect(); // Center of table
+                
+                // We create temporary elements
+                const tempContainer = document.createElement('div');
+                tempContainer.style.position = 'fixed';
+                tempContainer.style.inset = '0';
+                tempContainer.style.pointerEvents = 'none';
+                tempContainer.style.zIndex = '100';
+                document.body.appendChild(tempContainer);
+
+                let completed = 0;
+
+                cards.forEach((card, index) => {
+                    const el = createCardEl(card);
+                    // Initial Style
+                    el.style.position = 'absolute';
+                    // For human, we might want to start from hand position, but avatar is simpler fallback
+                    // If hand exists and has children, try to use hand card position?
+                    // Let's stick to Avatar for AI, and rough hand area for Player
+                    
+                    if (playerId === 0) {
+                         el.style.left = (window.innerWidth / 2 - 40) + 'px';
+                         el.style.top = (window.innerHeight - 150) + 'px';
+                    } else {
+                         el.style.left = (startRect.left + 20) + 'px';
+                         el.style.top = (startRect.top + 20) + 'px';
+                    }
+
+                    el.style.transform = 'scale(0.8)';
+                    el.style.transition = 'all 0.4s ease-out';
+                    tempContainer.appendChild(el);
+
+                    // Force reflow
+                    el.offsetHeight;
+
+                    // Target calculations
+                    const rot = (Math.random() * 20 - 10).toFixed(1);
+                    const xOffset = (index * 20) - ((cards.length-1)*10);
+                    const yOffset = (Math.random() * 10 - 5);
+                    
+                    const targetX = endRect.left + endRect.width/2 - 40 + xOffset;
+                    const targetY = endRect.top + endRect.height/2 - 56 + yOffset;
+
+                    setTimeout(() => {
+                        el.style.left = targetX + 'px';
+                        el.style.top = targetY + 'px';
+                        el.style.transform = `rotate(${rot}deg) scale(1)`;
+                    }, 10 * index);
+
+                    setTimeout(() => {
+                        completed++;
+                        if(completed === cards.length) {
+                            tempContainer.remove();
+                            resolve();
+                        }
+                    }, 400 + (10 * index));
+                });
+            });
+        }
+
+        function showPassEffect(playerId) {
+            const el = document.createElement('div');
+            el.innerText = "PASS";
+            el.className = "pass-text";
+            
+            const rect = document.getElementById(`avatar-${playerId}`).getBoundingClientRect();
+            // Offset towards center
+            let left = rect.left;
+            if (playerId === 1) left += 100; // Left player moves right
+            else if (playerId === 2) left -= 80; // Right player moves left
+            else left += 20; // Human moves slightly right/center
+
+            el.style.left = left + 'px';
+            el.style.top = (rect.top) + 'px';
+            
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        // Async Draw Card (Critical for flow control)
+        function drawCard(playerIndex, count = 1) {
+            if (deck.length === 0) {
+                log("牌堆已空，无法补牌！");
+                return Promise.resolve();
+            }
+            
+            // Execute animation for the first card to signify the action
+            return animateFlyCard(playerIndex).then(() => {
+                for(let i=0; i<count; i++) {
+                    if(deck.length > 0) {
+                        const card = deck.pop();
+                        PLAYERS[playerIndex].hand.push(card);
+                    }
+                }
+                sortHand(PLAYERS[playerIndex].hand);
+                renderHand(playerIndex);
+                log(`${PLAYERS[playerIndex].name} 补了一张牌。`);
+                return Promise.resolve();
+            });
+        }
+
+        // --- Roll Dice Logic & Animation ---
+        function showRollAnimation() {
+            const overlay = document.getElementById('rollOverlay');
+            overlay.classList.remove('hidden');
+            const resultDiv = document.getElementById('rollResult');
+            resultDiv.innerText = "";
+            const diceEls = [
+                document.getElementById('dice0'),
+                document.getElementById('dice1'),
+                document.getElementById('dice2')
+            ];
+
+            // Start animation
+            diceEls.forEach(el => el.classList.add('dice-anim'));
+            
+            let rolls = [0,0,0];
+            let interval = setInterval(() => {
+                rolls = [
+                    Math.floor(Math.random()*100),
+                    Math.floor(Math.random()*100),
+                    Math.floor(Math.random()*100)
+                ];
+                diceEls[0].innerText = rolls[0];
+                diceEls[1].innerText = rolls[1];
+                diceEls[2].innerText = rolls[2];
+            }, 50);
+
+            // Stop after 2 seconds
+            setTimeout(() => {
+                clearInterval(interval);
+                diceEls.forEach(el => el.classList.remove('dice-anim'));
+                
+                // Determine winner
+                const max = Math.max(...rolls);
+                const winnerIdx = rolls.indexOf(max);
+                
+                // Highlight winner
+                diceEls[winnerIdx].style.border = "4px solid #f1c40f";
+                diceEls[winnerIdx].style.color = "#f1c40f";
+                
+                resultDiv.innerText = `🎉 ${PLAYERS[winnerIdx].name} 点数最大，先手！`;
+
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    // Reset styles
+                    diceEls.forEach(el => {
+                        el.style.border = "none";
+                        el.style.color = "black";
+                        el.innerText = "?";
+                    });
+
+                    // Start Game Logic
+                    currentPlayerIndex = winnerIdx;
+                    log(`${PLAYERS[winnerIdx].name} 赢得 Roll 点。`);
+                    
+                    // Critical Fix: Wait for draw animation BEFORE starting turn
+                    drawCard(winnerIdx, 1).then(() => {
+                        log(`🎲 ${PLAYERS[winnerIdx].name} 获得了先手，开始出牌！`);
+                        setTimeout(startTurn, 500);
+                    });
+                    
+                }, 2000);
+
+            }, 2000);
+        }
+
+        function startTurn() {
+            updateActiveAvatar();
+            
+            // UNO check REMOVED (As requested)
+
+            const player = PLAYERS[currentPlayerIndex];
+
+            if (player.type === 'human') {
+                log("轮到你了，请出牌。");
+                document.getElementById('playerControls').classList.remove('hidden');
+                // Auto-disable pass if it's new round
+                const canPass = lastPlay !== null && lastPlay.playerId !== 0;
+                const passBtn = document.querySelector('#playerControls button:first-child');
+                passBtn.disabled = !canPass;
+                if(!canPass) passBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                else passBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                document.getElementById('playerControls').classList.add('hidden');
+                log(`${player.name} 正在思考...`);
+                setTimeout(() => aiTurn(currentPlayerIndex), 1000); 
+            }
+        }
+
+        function nextTurn() {
+            // Check win
+            if (PLAYERS[currentPlayerIndex].hand.length === 0) {
+                showEffect(`${PLAYERS[currentPlayerIndex].name} 获胜！`, 5000);
+                log(`游戏结束，${PLAYERS[currentPlayerIndex].name} 获胜！`);
+                document.getElementById('playerControls').classList.add('hidden');
+                return;
+            }
+
+            // Counter-Clockwise Order:
+            // 0 (You) -> 2 (Gaga/Right) -> 1 (Gugu/Left) -> 0
+            // Formula: (i + 2) % 3
+            currentPlayerIndex = (currentPlayerIndex + 2) % 3;
+            startTurn();
+        }
+
+        // --- Logic: Card Analysis ---
+        
+        function sortHand(hand) {
+            // Sort by value desc
+            hand.sort((a, b) => b.value - a.value);
+        }
+
+        // Return { type: 'single'|'pair'|'bomb'|'straight', rank: val, length: n } or null
+        function analyzeCards(cards) {
+            if (cards.length === 0) return null;
+            cards.sort((a, b) => a.value - b.value); // Low to high for analysis
+            
+            const jokerCount = cards.filter(c => c.isJoker).length;
+            const nonJokers = cards.filter(c => !c.isJoker);
+            
+            // 1. Single
+            if (cards.length === 1) {
+                return { type: 'single', rank: cards[0].value, length: 1, isBomb: false };
+            }
+
+            // 2. Pair (with Jokers)
+            if (cards.length === 2) {
+                if (nonJokers.length === 0) return { type: 'bomb', rank: 17, length: 2, isBomb: true }; // Double Joker Bomb
+                if (nonJokers.length === 1 && jokerCount === 1) return { type: 'pair', rank: nonJokers[0].value, length: 2, isBomb: false };
+                if (nonJokers.length === 2 && nonJokers[0].value === nonJokers[1].value) return { type: 'pair', rank: nonJokers[0].value, length: 2, isBomb: false };
+            }
+
+            // 3. Bomb
+            // Logic: All non-jokers are same, or 3+ 2s
+            if (cards.length >= 3) {
+                // Check for 2-Bomb
+                const twos = nonJokers.filter(c => c.rank === '2');
+                if (twos.length + jokerCount === cards.length && cards.length >=3 && twos.length > 0) {
+                    // It is a 2-bomb (Biggest bomb)
+                    return { type: 'bomb', rank: 15, length: cards.length, isBomb: true };
+                }
+
+                // Normal Bomb
+                if (nonJokers.length > 0) {
+                    const firstVal = nonJokers[0].value;
+                    const allSame = nonJokers.every(c => c.value === firstVal);
+                    if (allSame) {
+                        return { type: 'bomb', rank: firstVal, length: cards.length, isBomb: true };
+                    }
+                } else {
+                    // All jokers? (Max 2, covered above, invalid alone)
+                }
+            }
+
+            // 4. Straight (3+ cards, consecutive)
+            if (cards.length >= 3) {
+                if (nonJokers.some(c => c.rank === '2')) return null; // 2 cannot be in straight
+                
+                const vals = nonJokers.map(c => c.value);
+                const min = vals[0];
+                const max = vals[vals.length-1];
+                const uniqueVals = new Set(vals);
+                if (uniqueVals.size !== vals.length) return null;
+
+                const span = max - min;
+                if ((span + 1) - nonJokers.length <= jokerCount) {
+                    return { type: 'straight', rank: min + cards.length - 1, length: cards.length, isBomb: false };
+                }
+            }
+
+            return null;
+        }
+
+        function isValidPlay(play) {
+            if (!play) return false;
+            
+            // If new round
+            if (!lastPlay || lastPlay.playerId === currentPlayerIndex) return true;
+
+            // Bomb Logic
+            if (play.isBomb && !lastPlay.isBomb) return true;
+            if (!play.isBomb && lastPlay.isBomb) return false;
+
+            if (play.isBomb && lastPlay.isBomb) {
+                if (play.length > lastPlay.length) return true;
+                if (play.length < lastPlay.length) return false;
+                return play.rank > lastPlay.rank;
+            }
+
+            // Normal Play
+            if (play.type !== lastPlay.type) {
+                // 2-Cutoff Check
+                if (play.rank === 15 && play.length === lastPlay.length) return true;
+                return false;
+            }
+
+            if (play.length !== lastPlay.length) return false;
+
+            // Rank + 1 or 2 rule
+            if (play.rank === lastPlay.rank + 1) return true;
+            // "2 cuts" logic: Same length 2s beat non-2s
+            if (play.rank === 15 && lastPlay.rank < 15) return true; 
+
+            return false;
+        }
+
+        // --- Player Actions ---
+        function playerPlay() {
+            const selected = PLAYERS[0].hand.filter(c => c.selected);
+            if (selected.length === 0) {
+                alert("请选择要出的牌");
+                return;
+            }
+
+            const play = analyzeCards(selected);
+            if (!play) {
+                alert("无效的牌型！");
+                return;
+            }
+
+            if (selected.length === 1 && selected[0].isJoker) {
+                alert("王不能单出！");
+                return;
+            }
+
+            if (!isValidPlay(play)) {
+                alert("打不过上家，或者不符合'大一级'规则！");
+                return;
+            }
+
+            play.playerId = 0;
+            play.cards = selected;
+            executePlay(play);
+        }
+
+        function playerPass() {
+            if (lastPlay && lastPlay.playerId === 0) {
+                alert("必须出牌！");
+                return;
+            }
+            log("你选择了跳过。");
+            handlePass();
+        }
+
+        async function executePlay(play) {
+            const player = PLAYERS[play.playerId];
+            
+            // Animation first
+            await animatePlayCards(play.playerId, play.cards);
+
+            // Remove cards from hand
+            play.cards.forEach(c => {
+                const idx = player.hand.indexOf(c);
+                if (idx > -1) player.hand.splice(idx, 1);
+            });
+
+            // Update state
+            lastPlay = play;
+            passCount = 0;
+            
+            // UI
+            renderHand(play.playerId);
+            renderPlayedCards(play.cards, play.playerId);
+            updateCounter(play.cards);
+
+            // Log
+            let cardNames = play.cards.map(c => c.getDisplay()).join(",");
+            log(`${player.name} 出了: ${cardNames}`);
+
+            // Effects
+            if (play.isBomb) {
+                showEffect("爆裂黎明！", 1500, "text-red-600");
+                document.body.classList.add('bomb-effect');
+                setTimeout(() => document.body.classList.remove('bomb-effect'), 500);
+            }
+            // Cutoff effect (Rank 15 play on Rank < 15)
+            if (play.rank === 15 && (!lastPlay || lastPlay.rank < 15)) {
+                showEffect("强力截断！", 1500, "text-blue-400");
+            }
+
+            nextTurn();
+        }
+
+        function handlePass() {
+            // Show Pass Effect for current player
+            showPassEffect(currentPlayerIndex);
+
+            passCount++;
+            if (passCount >= 2) {
+                finishRound();
+            } else {
+                nextTurn();
+            }
+        }
+
+        function finishRound() {
+            log("无人能接，本轮结束。");
+            
+            const winnerId = lastPlay.playerId; // The person who played last
+            setTimeout(() => {
+                log(`${PLAYERS[winnerId].name} 赢得本轮，但需补一张牌。`);
+                
+                // Critical Fix: Wait for draw animation BEFORE starting turn
+                drawCard(winnerId, 1).then(() => {
+                    // Clear board AFTER draw is done
+                    document.getElementById('playArea').innerHTML = '';
+                    lastPlay = null;
+                    passCount = 0;
+                    currentPlayerIndex = winnerId;
+                    
+                    // Start new round
+                    setTimeout(startTurn, 500);
+                });
+            }, 1000);
+        }
+
+        // --- Improved Smart AI Logic ---
+        function aiTurn(pid) {
+            const hand = PLAYERS[pid].hand;
+            
+            let allMoves = getPossibleMoves(hand, lastPlay);
+            
+            // --- Strategic Context Analysis ---
+            const humanId = 0;
+            const humanHandSize = PLAYERS[humanId].hand.length;
+            const isHumanLow = humanHandSize <= 3; // Alert level
+            const isHumanCritical = humanHandSize <= 1; // Critical level
+            
+            // Determine who controls the table currently
+            // 'lastPlay' has { playerId, ... }
+            const tableOwner = lastPlay ? lastPlay.playerId : -1;
+            const isHumanThreat = (tableOwner === humanId) && isHumanLow;
+            
+            let bestMove = null;
+            let bestScore = -Infinity;
+
+            // --- AI Scoring System ---
+            allMoves.forEach(move => {
+                let score = 0;
+                
+                // 1. Base Score: Prefer playing smaller rank cards (get rid of trash)
+                // Range 3..17. 3 gets +17, A(14) gets +6.
+                score += (20 - move.rank); 
+
+                // 2. Card Type Value Adjustments
+                if (move.isBomb) {
+                    score -= 60; // Penalize using bombs lightly
+                    
+                    // SITUATION: Winning
+                    if (hand.length === move.cards.length) score += 10000; // Win game
+                    
+                    // SITUATION: Human Threat
+                    if (isHumanThreat) score += 300; 
+                    if (isHumanCritical && tableOwner === humanId) score += 800; // Must stop human winning
+                } 
+                else if (move.rank === 15) { // 2s (Cutoff)
+                    score -= 40; // Penalize wasting 2s
+                    
+                    if (hand.length === move.cards.length) score += 10000; // Win game
+                    if (isHumanThreat) score += 200; // Use 2 to stop human
+                    
+                    // Tactical: If I have a lot of cards, use 2 to seize control
+                    if (hand.length > 5 && !isHumanThreat) score += 20; 
+                } 
+                else {
+                    // Normal Cards
+                    // Penalize if it breaks a bomb? (Simple check: if we have 3+ of this rank)
+                    const countInHand = hand.filter(c => c.value === move.rank && !c.isJoker).length;
+                    if (countInHand >= 3 && move.length < 3) {
+                        score -= 50; // Don't break bombs for singles/pairs unless necessary
+                    }
+                }
+
+                // 3. Free Turn Bonuses (Start of round)
+                if (!lastPlay) {
+                    if (move.type === 'straight') score += 40; // Clear many cards
+                    if (move.type === 'pair') score += 15;
+                    if (move.rank < 8) score += 20; // Clear small junk
+                }
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMove = move;
+                }
+            });
+
+            // --- Decision Making ---
+            if (bestMove) {
+                // Pass Logic: If the best move has a negative score (meaning it's strategically bad)
+                // AND we are not forced to play (e.g., table not empty)
+                // AND it's not a critical threat
+                // Then pass to save strength.
+                
+                const isSpecial = bestMove.isBomb || bestMove.rank === 15;
+                const isForced = !lastPlay; // Must play if starting
+                
+                // If it's a special card, not forced, not a threat, and score is low... pass.
+                if (isSpecial && !isForced && !isHumanThreat && bestScore < 0) {
+                     log(`${PLAYERS[pid].name} 决定忍一手...`);
+                     handlePass();
+                     return;
+                }
+                
+                bestMove.playerId = pid;
+                executePlay(bestMove);
+            } else {
+                // No valid moves
+                if (!lastPlay) {
+                    // This should ideally not happen due to getPossibleMoves unless hand is empty?
+                    // Fallback to pass to prevent crash
+                    log(`${PLAYERS[pid].name} 竟然无牌可出？`);
+                    handlePass();
+                    return;
+                }
+                log(`${PLAYERS[pid].name} 选择跳过。`);
+                handlePass();
+            }
+        }
+
+        function getPossibleMoves(hand, target) {
+            let possible = [];
+            
+            // Helper to attach cards to the move object
+            const attachCards = (move, cardArray) => {
+                if (move) {
+                    move.cards = cardArray;
+                    // Tag BOMBS for AI Logic
+                    if (move.type === 'bomb' || (move.rank === 15 && move.length >= 3)) {
+                        move.isBomb = true;
+                    }
+                    if (isValidPlay(move)) possible.push(move);
+                }
+            };
+
+            // 0. Double Joker Bomb
+            const jokers = hand.filter(c => c.isJoker);
+            if (jokers.length === 2) {
+                attachCards(analyzeCards(jokers), jokers);
+            }
+
+            // 1. Singles
+            hand.forEach(c => {
+                if(c.isJoker) return;
+                attachCards(analyzeCards([c]), [c]);
+            });
+
+            // 2. Pairs
+            let pairs = {};
+            hand.forEach(c => {
+                if(!c.isJoker) {
+                    if(!pairs[c.value]) pairs[c.value] = [];
+                    pairs[c.value].push(c);
+                }
+            });
+            for(let v in pairs) {
+                if(pairs[v].length >= 2) {
+                    let subset = pairs[v].slice(0,2);
+                    attachCards(analyzeCards(subset), subset);
+                }
+            }
+
+            // 3. Bombs (3 or 4)
+            for(let v in pairs) {
+                if(pairs[v].length >= 3) {
+                    let subset = pairs[v];
+                    attachCards(analyzeCards(subset), subset);
+                }
+            }
+            
+            // 4. Special 2s Logic (Single/Pair 2s)
+            // AI logic treats them as special, but getPossibleMoves just needs to list them.
+            // They are covered by Singles/Pairs loops above (Rank 15).
+            
+            return possible;
+        }
+
+        // --- UI Rendering ---
+
+        function renderHand(playerId) {
+            const player = PLAYERS[playerId];
+            const container = document.getElementById(`hand-${playerId}`);
+            container.innerHTML = '';
+            
+            if (playerId === 0) {
+                // Player: Spread out, Centered
+                const width = container.offsetWidth;
+                const cardWidth = 80;
+                // Calculate total width of hand: (N-1)*overlap + cardWidth
+                const overlap = 40; 
+                const totalWidth = (player.hand.length - 1) * overlap + cardWidth;
+                
+                container.style.width = `${totalWidth}px`;
+
+                player.hand.forEach((card, index) => {
+                    const el = createCardEl(card);
+                    el.style.left = `${index * overlap}px`;
+                    el.style.zIndex = index;
+                    if (card.selected) el.classList.add('selected');
+                    
+                    el.onclick = () => {
+                        card.selected = !card.selected;
+                        renderHand(0);
+                    };
+                    container.appendChild(el);
+                });
+            } else {
+                // AI: Stacked
+                player.hand.forEach((card, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'card card-back';
+                    el.style.position = 'absolute';
+                    el.style.left = `${index * 2}px`;
+                    el.style.top = `${index * -1}px`;
+                    container.appendChild(el);
+                });
+            }
+            
+            // Update counts
+            document.getElementById(`count-${playerId}`).innerText = `(${player.hand.length})`;
+        }
+
+        function createCardEl(card) {
+            const el = document.createElement('div');
+            el.className = `card ${card.getColor()}`;
+            el.innerHTML = `
+                <div>${card.getDisplay()}</div>
+                <div class="card-center">${card.suit}</div>
+                <div class="card-corner-br">${card.getDisplay()}</div>
+            `;
+            return el;
+        }
+
+        function renderPlayedCards(cards, playerId) {
+            const area = document.getElementById('playArea');
+            area.innerHTML = '';
+
+            cards.forEach((card, index) => {
+                const el = createCardEl(card);
+                const rot = (Math.random() * 20 - 10).toFixed(1);
+                const x = (index * 20) - ((cards.length-1)*10);
+                const y = (Math.random() * 10 - 5);
+                
+                el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+                el.style.position = 'absolute';
+                area.appendChild(el);
+            });
+        }
+
+        function renderCounter() {
+            const tbody = document.getElementById('counterBody');
+            let html = '<tr>';
+            const order = [...RANKS, '🤡'];
+            order.forEach(r => {
+                html += `<td>${playedHistory[r]}</td>`;
+            });
+            html += '</tr>';
+            tbody.innerHTML = html;
+        }
+
+        function log(msg) {
+            const div = document.getElementById('gameLog');
+            const p = document.createElement('div');
+            p.innerText = `[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}`;
+            div.appendChild(p);
+            div.scrollTop = div.scrollHeight;
+        }
+
+        function showEffect(text, duration = 2000, colorClass = "text-yellow-400") {
+            const el = document.getElementById('floatingText');
+            el.innerText = text;
+            el.className = `floating-text ${colorClass}`;
+            // Reset animation
+            el.style.animation = 'none';
+            el.offsetHeight; /* trigger reflow */
+            el.style.animation = 'textPop ' + (duration/1000) + 's forwards';
+        }
+
+        function updateActiveAvatar() {
+            document.querySelectorAll('.avatar').forEach(el => el.classList.remove('active'));
+            document.getElementById(`avatar-${currentPlayerIndex}`).classList.add('active');
+        }
+
+        // --- Emoji System ---
+        function toggleEmojiMenu() {
+            const menu = document.getElementById('emojiMenu');
+            menu.classList.toggle('hidden');
+            setTimeout(() => menu.classList.toggle('open'), 10);
+        }
+
+        function sendEmoji(emoji) {
+            toggleEmojiMenu();
+            // Player Emoji - Center Screen
+            triggerEmojiEffect(emoji, true);
+
+            // AI Response (Random)
+            setTimeout(() => {
+                const ai = Math.random() > 0.5 ? 1 : 2;
+                const aiEmojis = ['😊', '😔', '🤬', '😭'];
+                const reply = aiEmojis[Math.floor(Math.random() * aiEmojis.length)];
+                showBubble(ai, reply);
+            }, 1000 + Math.random()*1000);
+        }
+
+        function showBubble(playerId, text) {
+            const b = document.getElementById(playerId === 0 ? `avatar-0` : `bubble-${playerId}`);
+            
+            // Only used for AI now, or small chats
+            if (playerId !== 0) {
+                b.innerText = text;
+                b.style.fontSize = "30px";
+                b.style.opacity = 1;
+                setTimeout(() => b.style.opacity = 0, 2000);
+            }
+        }
+
+        function triggerEmojiEffect(emoji, isPlayer) {
+            if (!isPlayer) return;
+            
+            // Text Effects (Center Screen)
+            if (emoji === '🦇') showEffect("去码头整点薯条!", 2000);
+            else if (emoji === '🐱') showEffect("愚蠢的猫猫喵~", 2000);
+            else if (emoji === '🐕') showEffect("狗子祝您一臂之力!", 2000);
+            else if (emoji === '🎂') {
+                showEffect("祝您生日快乐~", 3000);
+                startRain('🍰');
+            } else {
+                // For standard emojis, show them large in center too
+                showEffect(emoji, 2000);
+            }
+        }
+
+        function startRain(char) {
+            const container = document.getElementById('rainContainer');
+            for(let i=0; i<30; i++) {
+                const d = document.createElement('div');
+                d.innerText = char;
+                d.style.position = 'absolute';
+                d.style.left = Math.random() * 100 + 'vw';
+                d.style.top = '-50px'; // Start above screen
+                d.style.fontSize = (Math.random() * 20 + 20) + 'px';
+                d.style.animation = `rain ${Math.random()*2 + 1}s linear`;
+                container.appendChild(d);
+                setTimeout(() => d.remove(), 3000);
+            }
+        }
+
+        function toggleRules(show) {
+            const el = document.getElementById('rulesModal');
+            if(show) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
+
